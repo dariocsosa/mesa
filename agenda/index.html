@@ -17,7 +17,7 @@ body{margin:0;background:var(--ground);color:var(--ink);font:400 16px/1.6 Figtre
 .err{color:var(--bad);font-size:14.5px}
 .btn{all:unset;cursor:pointer;font:700 14px/1 Montserrat,system-ui,sans-serif;padding:12px 16px;border-radius:10px;border:1px solid var(--accent);color:var(--accent);text-align:center}
 .btn:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
-#gbtn{min-height:44px}
+#gbtn{min-height:44px;color-scheme:light;width:fit-content;border-radius:999px;overflow:hidden}
 </style></head>
 <body>
 <div class="gate" id="gate"><div class="card">
@@ -70,7 +70,7 @@ function start(b){
 }
 function initGoogle(){
   google.accounts.id.initialize({client_id:CLIENT_ID,callback:onCredential,auto_select:true,cancel_on_tap_outside:false});
-  google.accounts.id.renderButton($('gbtn'),{theme:'filled_black',size:'large',text:'signin_with',shape:'pill',locale:'es'});
+  google.accounts.id.renderButton($('gbtn'),{theme:'outline',size:'large',text:'signin_with',shape:'pill',locale:'es'});
   google.accounts.id.prompt();
 }
 if(window.MESA_TEST){ onCredential({credential:window.MESA_TEST}); }
