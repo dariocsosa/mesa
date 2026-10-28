@@ -176,7 +176,7 @@ th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute
 <div id="capa"></div>
 
 <script>
-const API='https://script.google.com/macros/s/AKfycbzD5w7BxtyDUPqN5Hth_ym6g4_IsK35H3J-wUWx8G3LCLbEQ9a1vYiv5O_JGpkVtFQSPQ/exec', CLIENT_ID='4732553757-o1gh0f8paqaa2uqv8ugmn42qk675677s.apps.googleusercontent.com';
+const API='https://script.google.com/macros/s/AKfycbzD5w7BxtyDUPqN5Hth_ym6g4_IsK35H3J-wUWx8G3LCLbEQ9a1vYiv5O_JGpkVtFQSPQ/exec', MESA='https://script.google.com/macros/s/AKfycbxpCoOxYEoGHbDG9ZkBTggU78TCW9Oj6byMI5Zu3BjyP5gQdbTXloKsCOc5i6R9IVVlJQ/exec', CLIENT_ID='4732553757-o1gh0f8paqaa2uqv8ugmn42qk675677s.apps.googleusercontent.com';
 const TZ='America/Bogota';
 const NOM={juan:'Juan',empresa:'Empresa JL',proyectos:'Proyectos',comercial:'Comercial',medellin:'Medellín',festivo:'Festivos'};
 const $=id=>document.getElementById(id);
@@ -391,7 +391,13 @@ async function cargarHist(){ try{ S.hist=(await api('historial')).filas; }catch(
 
 /* ---------- arranque ---------- */
 async function onCredential(resp){
-  TOKEN=resp.credential; $('gate-err').textContent='';
+  $('gate-err').textContent='';
+  try{
+    // La Mesa verifica el token de Google y entrega una sesión firmada que la consola entiende.
+    const r=await fetch(MESA,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn:'sesion',token:resp.credential})});
+    const j=await r.json(); if(!j.ok){ const e=new Error(j.error||'No se pudo iniciar sesión'); e.code=j.code; throw e; }
+    TOKEN=j.data.sesion;
+  }catch(e){ TOKEN=null; $('gate-err').textContent=e.message; try{google.accounts.id.disableAutoSelect();}catch(_){} return; }
   if(started){ $('gate').hidden=true; return; }
   try{ const b=await api('boot'); ME=b; S.hoy=b.hoy; S.ancla=b.hoy; started=true; $('gate').hidden=true; $('app').hidden=false; $('me').textContent=b.nombre; document.title='Agenda JL · '+b.nombre; await cargar(); }
   catch(e){ TOKEN=null; $('gate-err').textContent=e.message; try{google.accounts.id.disableAutoSelect();}catch(_){} }
