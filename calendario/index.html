@@ -168,6 +168,7 @@ th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute
     </nav>
     <span class="sp"></span>
     <span class="me" id="me"></span>
+    <button class="btn" id="ayuda" type="button">Ayuda</button>
     <button class="btn" id="refresh" type="button">Actualizar</button>
     <button class="btn pri" id="nuevo" type="button">+ Agregar</button>
   </header>
@@ -371,6 +372,21 @@ function formulario(it){
     try{ const r=await api(edit?'mover':'crear',d); toast(r.mensaje||'Listo.'); cerrar(); S.hist=null; await cargar(); }catch(e){ b.disabled=false; falla(e); } };
 }
 
+/* ---------- ayuda ---------- */
+function ayuda(){
+  abrirPanel(`<div class="kick">Cómo se usa</div><h2>Agenda JL en cinco pasos</h2>
+  <dl class="kv" style="grid-template-columns:1fr;gap:12px">
+    <dd><b>Ver.</b> En <i>Calendario</i> cambias entre Mes, Semana y Lista, y apagas o prendes calendarios con los botones de colores. Toca un día para ver todo lo que tiene.</dd>
+    <dd><b>Agregar.</b> «+ Agregar» crea el evento en el calendario de Juan, en Empresa JL o en Medellín. Antes de guardar te avisa si se cruza con algo o cae en festivo; puedes crearlo igual.</dd>
+    <dd><b>Cambiar.</b> Toca un evento: puedes moverlo de fecha u hora, marcarlo «movible» (se puede mover si hace falta) o «privado» (cuenta como ocupado pero sin título). Lo que creaste desde aquí también se puede eliminar.</dd>
+    <dd><b>Choques.</b> La pestaña <i>Choques</i> junta lo que se cruza con la agenda de Juan o cae en festivo, para resolverlo de una vez.</dd>
+    <dd><b>Cuándo puede Juan.</b> Muestra sus horarios libres y copia un texto listo para enviar a quien pida cita.</dd>
+  </dl>
+  <p class="vacio" style="margin:0">Si un evento lo organiza otra persona, la consola lo dice: el cambio de hora lo hace esa persona. Todo lo que hagas queda en <i>Historial</i>, y lo nuevo aparece en el calendario «Agenda JL» de Google en menos de una hora.</p>
+  <div class="acts"><button class="btn pri" id="a-cerrar">Entendido</button></div>`);
+  $('a-cerrar').onclick=cerrar;
+}
+
 /* ---------- eventos de la página ---------- */
 document.addEventListener('click',e=>{
   const t=e.target.closest('button,.dia,.vel'); if(!t) return;
@@ -382,6 +398,7 @@ document.addEventListener('click',e=>{
   if(t.dataset.nav!==undefined){ const n=+t.dataset.nav; if(n===0){S.ancla=S.hoy;S.sel=null;} else if(S.modo==='mes'){ const p=mesIni(S.ancla); S.ancla=suma(mesIni(suma(p,n>0?32:-1)),0); } else S.ancla=suma(S.ancla,n*(S.modo==='semana'?7:30)); cargar(); return; }
   if(t.classList.contains('tab')){ S.vista=t.dataset.v; if(S.vista==='libres'&&!S.libres) cargarLibres(); if(S.vista==='hist'&&!S.hist) cargarHist(); if(S.vista==='choques'||S.vista==='cal') cargar(); else pintar(); return; }
   if(t.id==='nuevo'){ formulario(null); return; }
+  if(t.id==='ayuda'){ ayuda(); return; }
   if(t.id==='refresh'){ S.libres=null; S.hist=null; cargar(); if(S.vista==='libres') cargarLibres(); if(S.vista==='hist') cargarHist(); return; }
   if(t.id==='copiar'&&S.libres){ const tx='Juan puede en estos horarios:\n'+S.libres.dias.filter(d=>!/sin huecos/.test(d.libres)).slice(0,10).map(d=>'• '+d.etiqueta+': '+d.libres).join('\n'); (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast('Copiado.'),()=>toast('No se pudo copiar. Selecciona el texto a mano.',true)); }
 });
@@ -399,7 +416,7 @@ async function onCredential(resp){
     TOKEN=j.data.sesion;
   }catch(e){ TOKEN=null; $('gate-err').textContent=e.message; try{google.accounts.id.disableAutoSelect();}catch(_){} return; }
   if(started){ $('gate').hidden=true; return; }
-  try{ const b=await api('boot'); ME=b; S.hoy=b.hoy; S.ancla=b.hoy; started=true; $('gate').hidden=true; $('app').hidden=false; $('me').textContent=b.nombre; document.title='Agenda JL · '+b.nombre; await cargar(); }
+  try{ const b=await api('boot'); ME=b; S.hoy=b.hoy; S.ancla=b.hoy; started=true; $('gate').hidden=true; $('app').hidden=false; $('me').textContent=b.nombre; document.title='Agenda JL · '+b.nombre; await cargar(); try{ if(!localStorage.getItem('agendajl_ayuda')){ localStorage.setItem('agendajl_ayuda','1'); ayuda(); } }catch(_){ } }
   catch(e){ TOKEN=null; $('gate-err').textContent=e.message; try{google.accounts.id.disableAutoSelect();}catch(_){} }
 }
 function initGoogle(){
