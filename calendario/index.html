@@ -146,6 +146,13 @@ th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);verti
 th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
 .tw{overflow-x:auto;background:var(--surface);border:1px solid var(--line);border-radius:12px}
 .cargando{color:var(--muted);padding:24px;text-align:center}
+.pcard{border:1px solid var(--line,#ddd);border-radius:12px;padding:12px 14px;margin:10px 0}
+.pcard .q{color:var(--muted);font-size:13px;margin:4px 0 8px;white-space:pre-wrap}
+.pcard .pev{display:flex;flex-wrap:wrap;gap:8px;align-items:center;padding:6px 0;border-top:1px solid var(--line,#ddd)}
+.pcard .pev .t{flex:1 1 260px}
+.pcard .pev.hecho{opacity:.55}
+#p-texto{width:100%;min-height:84px;font:inherit;padding:8px;border-radius:8px;border:1px solid var(--line,#ccc);background:transparent;color:inherit;box-sizing:border-box}
+.pcaja{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-top:8px}
 </style></head>
 <body>
 
@@ -164,6 +171,7 @@ th{font-size:12px;letter-spacing:.06em;text-transform:uppercase;color:var(--mute
       <button class="tab" role="tab" data-v="cal" aria-selected="true">Calendario</button>
       <button class="tab" role="tab" data-v="choques" aria-selected="false">Choques<span class="n" id="nch" hidden></span></button>
       <button class="tab" role="tab" data-v="libres" aria-selected="false">Cuándo puede Juan</button>
+      <button class="tab" role="tab" data-v="prop" aria-selected="false">Propuestas<span class="n" id="npr" hidden></span></button>
       <button class="tab" role="tab" data-v="hist" aria-selected="false">Historial</button>
     </nav>
     <span class="sp"></span>
@@ -182,11 +190,17 @@ const TZ='America/Bogota';
 const NOM={juan:'Juan',empresa:'Empresa JL',proyectos:'Proyectos',comercial:'Comercial',medellin:'Medellín',festivo:'Festivos'};
 const $=id=>document.getElementById(id);
 let TOKEN=null, ME=null, started=false;
-const S={vista:'cal', modo:'mes', ancla:null, sel:null, items:[], filtro:{juan:1,empresa:1,proyectos:1,comercial:1,medellin:1,festivo:1}, actualizado:'', cargando:false, libres:null, hist:null};
+const S={vista:'cal', modo:'mes', ancla:null, sel:null, items:[], filtro:{juan:1,empresa:1,proyectos:1,comercial:1,medellin:1,festivo:1}, actualizado:'', cargando:false, libres:null, hist:null, prop:null};
 
 /* ---------- red ---------- */
 async function api(fn,args){
   const r=await fetch(API,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn,args:args||{},token:TOKEN})});
+  const j=await r.json();
+  if(!j.ok){ const e=new Error(j.error||'Error'); e.code=j.code; throw e; }
+  return j.data;
+}
+async function mesa(fn,args){
+  const r=await fetch(MESA,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn,args:args||{},token:TOKEN})});
   const j=await r.json();
   if(!j.ok){ const e=new Error(j.error||'Error'); e.code=j.code; throw e; }
   return j.data;
@@ -241,7 +255,9 @@ function pintar(){
   if(S.vista==='cal') m.innerHTML=htmlCal();
   else if(S.vista==='choques') m.innerHTML=htmlChoques();
   else if(S.vista==='libres') m.innerHTML=htmlLibres();
+  else if(S.vista==='prop') m.innerHTML=htmlProp();
   else m.innerHTML=htmlHist();
+  const n=$('npr'); if(n){ const k=S.prop?S.prop.pendientes.length:0; n.hidden=!k; n.textContent=k; }
 }
 function chipEv(it,compacto){
   const cls='ev k-'+it.cal+((it.choque||it.festivo)?' alerta':'')+(it.oculto?' oculto':'');
@@ -304,6 +320,54 @@ function htmlLibres(){
   if(!S.libres) return cab+'<div class="cargando">Cargando…</div>';
   return cab+'<div class="dia-panel">'+S.libres.dias.map(d=>`<div class="libre"><b>${esc(d.etiqueta)}</b>${barra(d.libres,S.libres.jornada)}<span class="tx">${/sin huecos/.test(d.libres)?'Sin huecos':'Libre: '+esc(d.libres)}${d.movible?' · movible: '+esc(d.movible):''}</span></div>`).join('')+'</div>';
 }
+/* ---------- propuestas (audio o texto -> evento, con aprobación) ---------- */
+function lineaProp(e){ const cuando=e.fecha?(nombreDia(e.fecha,true)+(e.hasta?' al '+nombreDia(e.hasta,true):'')+(e.todoElDia?' · todo el día':' · '+esc(e.horaIni)+(e.horaFin?'–'+esc(e.horaFin):''))):'<b>sin fecha</b>'; return `<b>${esc(e.titulo||'(sin título)')}</b> · ${cuando}${e.lugar?' · '+esc(e.lugar):''} · ${e.donde==='empresa'?'Empresa JL':'Calendario de Juan'}`; }
+function htmlProp(){
+  const cab='<div class="bar"><h2>Propuestas</h2><span class="sp"></span></div>';
+  const caja=`<div class="dia-panel"><p class="vacio" style="margin:0 0 8px">Cuenta aquí qué hay que agendar, por escrito o con un audio. No se crea nada en el calendario hasta que Daniela Niño o Daniela Rincón lo aprueben.</p>
+    <textarea id="p-texto" placeholder="Ej.: El jueves 5 de noviembre a las 3 p. m. Juan tiene reunión con Camilo en Bogotá"></textarea>
+    <div class="pcaja"><button class="btn pri" id="p-enviar" type="button">Enviar propuesta</button><button class="btn" id="p-grabar" type="button">● Grabar audio</button>
+    <label class="btn" style="flex-direction:row;cursor:pointer">Subir audio<input type="file" id="p-archivo" accept="audio/*,.opus,.ogg,.m4a,.mp3,.wav,.aac" hidden></label><span id="p-estado" class="vacio"></span></div></div>`;
+  if(!S.prop) return cab+caja+'<div class="cargando">Cargando…</div>';
+  const P=S.prop, quienes=p=>`${esc(p.quien)} · ${esc(String(p.creada).slice(0,16).replace('T',' '))}`;
+  const pend=P.pendientes.map(p=>`<div class="pcard"><b>${quienes(p)}</b>${p.audio?` · <a href="${esc(p.audio)}" target="_blank" rel="noopener">audio</a>`:''}<div class="q">«${esc(p.texto)}»</div>
+    ${p.eventos.map((e,i)=>`<div class="pev${e.hecho?' hecho':''}"><span class="t">${lineaProp(e)}${e.duda?`<br><span class="vacio">⚠ ${esc(e.duda)}</span>`:''}${e.hecho?`<br><span class="vacio">${e.hecho==='descartado'?'Descartado':'Creado'}</span>`:''}</span>
+      ${(!e.hecho&&P.puedeAprobar)?`<button class="btn pri sm" data-ap="${esc(p.id)}|${i}">Revisar y aprobar</button><button class="btn sm" data-no="${esc(p.id)}|${i}">Descartar</button>`:''}</div>`).join('')}
+    ${P.puedeAprobar?`<div class="pcaja"><button class="btn sm" data-nop="${esc(p.id)}">Descartar todo</button></div>`:'<div class="vacio">Esperando la aprobación de una de las Danielas.</div>'}</div>`).join('');
+  const res=P.resueltas.map(p=>`<div class="pcard"><b>${quienes(p)}</b> · ${esc(p.estado)}${p.resolvio?' por '+esc(p.resolvio):''}<div class="q">«${esc(p.texto)}»</div>${p.eventos.map(e=>`<div class="pev"><span class="t">${lineaProp(e)}</span></div>`).join('')}</div>`).join('');
+  return cab+caja+'<h3>Por aprobar</h3>'+(pend||'<div class="dia-panel"><span class="vacio">No hay propuestas pendientes.</span></div>')+(res?'<h3>Resueltas</h3>'+res:'');
+}
+async function cargarProp(){ try{ S.prop=await mesa('propuesta_lista'); }catch(e){ falla(e); } pintar(); }
+async function enviarProp(blob){
+  const st=$('p-estado'), tx=$('p-texto'); let args={texto:tx?tx.value:''};
+  try{
+    if(blob){ st.textContent='Preparando audio…'; let out=blob, mime=blob.type||'audio/ogg'; try{ out=await aWav(blob); mime='audio/wav'; }catch(_){ } args.b64=await aB64(out); args.mime=mime; }
+    else if(!args.texto.trim()){ toast('Escribe o graba lo que hay que agendar.',true); return; }
+    st.textContent='Enviando e interpretando… puede tardar unos segundos';
+    S.prop=await mesa('propuesta_crear',args); if(tx) tx.value=''; toast('Propuesta enviada. Queda esperando aprobación.'); pintar();
+  }catch(e){ if($('p-estado')) $('p-estado').textContent=''; falla(e); }
+}
+function aB64(blob){ return new Promise((ok,no)=>{ const fr=new FileReader(); fr.onload=()=>ok(String(fr.result).split(',')[1]); fr.onerror=no; fr.readAsDataURL(blob); }); }
+async function aWav(blob){ // WAV mono 16 kHz: lo entiende Gemini y pesa poco (igual que la Mesa)
+  const AC=window.AudioContext||window.webkitAudioContext, ctx=new AC(), audio=await ctx.decodeAudioData(await blob.arrayBuffer()); try{ctx.close();}catch(_){ }
+  const rate=16000, off=new OfflineAudioContext(1,Math.ceil(audio.duration*rate),rate), src=off.createBufferSource(); src.buffer=audio; src.connect(off.destination); src.start();
+  const x=(await off.startRendering()).getChannelData(0), buf=new ArrayBuffer(44+x.length*2), v=new DataView(buf), w=(o,t)=>{for(let i=0;i<t.length;i++)v.setUint8(o+i,t.charCodeAt(i));};
+  w(0,'RIFF'); v.setUint32(4,36+x.length*2,true); w(8,'WAVE'); w(12,'fmt '); v.setUint32(16,16,true); v.setUint16(20,1,true); v.setUint16(22,1,true); v.setUint32(24,rate,true); v.setUint32(28,rate*2,true); v.setUint16(32,2,true); v.setUint16(34,16,true); w(36,'data'); v.setUint32(40,x.length*2,true);
+  for(let i=0,o=44;i<x.length;i++,o+=2){ const s=Math.max(-1,Math.min(1,x[i])); v.setInt16(o,s<0?s*0x8000:s*0x7fff,true); }
+  return new Blob([buf],{type:'audio/wav'});
+}
+let REC=null;
+async function grabarProp(){
+  const b=$('p-grabar');
+  if(REC){ REC.stop(); return; }
+  if(!navigator.mediaDevices||!window.MediaRecorder){ toast('Este navegador no graba. Sube un audio o escribe.',true); return; }
+  try{ const stream=await navigator.mediaDevices.getUserMedia({audio:true}), mr=new MediaRecorder(stream), trozos=[]; REC=mr;
+    mr.ondataavailable=e=>{ if(e.data.size) trozos.push(e.data); };
+    mr.onstop=()=>{ stream.getTracks().forEach(t=>t.stop()); REC=null; const bb=$('p-grabar'); if(bb) bb.textContent='● Grabar audio'; enviarProp(new Blob(trozos,{type:mr.mimeType||'audio/webm'})); };
+    mr.start(); b.textContent='■ Terminar y enviar';
+  }catch(e){ REC=null; toast('No se pudo usar el micrófono: '+(e.message||e),true); }
+}
+function dePropuesta(p,i){ const e=p.eventos[i]; return {pid:p.id,indice:i,donde:e.donde,titulo:e.titulo,todo:e.todoElDia,fecha:e.fecha,hasta:e.hasta,hi:e.horaIni||'09:00',hf:e.horaFin||'',lugar:e.lugar,nota:[e.nota,'Propuesto por '+p.quien+(p.audio?' (audio)':'')+'.'].filter(Boolean).join(' · ')}; }
 function htmlHist(){
   const cab='<div class="bar"><h2>Historial</h2><span class="sp"></span></div>';
   if(!S.hist) return cab+'<div class="cargando">Cargando…</div>';
@@ -339,11 +403,12 @@ async function accion(fn,args){
 }
 
 /* ---------- formulario: crear o cambiar ---------- */
-function formulario(it){
+function formulario(it,pre){
   const edit=!!it;
   const f=edit?{donde:it.calId,titulo:it.titulo,todo:it.todoElDia,fecha:it.todoElDia?it.ini:ymdDe(new Date(it.ini)),hasta:it.todoElDia?suma(it.fin,-1):ymdDe(new Date(new Date(it.fin).getTime()-1)),hi:it.todoElDia?'09:00':hmDe(new Date(it.ini)),hf:it.todoElDia?'10:00':hmDe(new Date(it.fin)),lugar:it.lugar||''}
+    :pre?{donde:pre.donde,titulo:pre.titulo,todo:pre.todo,fecha:pre.fecha||S.sel||S.hoy,hasta:pre.hasta,hi:pre.hi,hf:pre.hf||(pre.hi?String((+pre.hi.slice(0,2)+1)%24).padStart(2,'0')+pre.hi.slice(2):'10:00'),lugar:pre.lugar}
     :{donde:'juan',titulo:'',todo:false,fecha:S.sel||S.hoy,hasta:'',hi:'09:00',hf:'10:00',lugar:''};
-  abrirPanel(`<div class="kick">${edit?'Cambiar':'Agregar'}</div><h2>${edit?esc(it.titulo):'Nuevo evento'}</h2>
+  abrirPanel(`<div class="kick">${edit?'Cambiar':pre?'Propuesta por aprobar':'Agregar'}</div><h2>${edit?esc(it.titulo):pre?'Revisa y aprueba':'Nuevo evento'}</h2>
   <form id="f" autocomplete="off">
     ${edit?'':`<label>Dónde se crea<select id="f-donde"><option value="juan">Calendario de Juan</option><option value="empresa">Empresa JL (eventos de la empresa)</option><option value="medellin">Medellín (fechas de la ciudad)</option></select></label>`}
     <label>Título<input type="text" id="f-titulo" required maxlength="120" value="${esc(f.titulo)}" placeholder="Charla en Bucaramanga"></label>
@@ -351,16 +416,17 @@ function formulario(it){
     <div class="dos"><label>Fecha<input type="date" id="f-fecha" required value="${f.fecha}"></label><label>Hasta (si dura varios días)<input type="date" id="f-hasta" value="${f.hasta&&f.hasta!==f.fecha?f.hasta:''}"></label></div>
     <div class="dos" id="f-horas"><label>Desde<input type="time" id="f-hi" value="${f.hi}"></label><label>Hasta<input type="time" id="f-hf" value="${f.hf}"></label></div>
     <label>Lugar<input type="text" id="f-lugar" maxlength="160" value="${esc(f.lugar)}" placeholder="Opcional"></label>
-    ${edit?'':`<label>Nota<textarea id="f-nota" placeholder="Opcional"></textarea></label>
+    ${edit?'':`<label>Nota<textarea id="f-nota" placeholder="Opcional">${pre?esc(pre.nota):''}</textarea></label>
     <div id="f-opts"><label class="ck"><input type="checkbox" id="f-movible"> Se puede mover si hace falta</label>
     <label class="ck"><input type="checkbox" id="f-privado"> Privado: cuenta como ocupado pero sin título</label>
     <label class="ck" id="f-bj" hidden><input type="checkbox" id="f-bloquea" checked> Juan asiste (ocupa su agenda)</label></div>`}
     <div id="f-choque"></div>
-    <div class="acts"><button class="btn pri" type="submit" id="f-ok">${edit?'Guardar cambio':'Crear'}</button><button class="btn" type="button" id="f-x">Cancelar</button></div>
+    <div class="acts"><button class="btn pri" type="submit" id="f-ok">${edit?'Guardar cambio':pre?'Aprobar y crear':'Crear'}</button><button class="btn" type="button" id="f-x">Cancelar</button></div>
   </form>`);
   const g=id=>$(id), horas=()=>{ g('f-horas').hidden=g('f-todo').checked; };
   horas(); g('f-todo').onchange=()=>{horas();revisar()};
   if(!edit){ g('f-donde').onchange=()=>{ const d=g('f-donde').value; g('f-bj').hidden=d!=='empresa'; g('f-opts').hidden=d==='medellin'; revisar(); }; }
+  if(pre&&!edit){ g('f-donde').value=pre.donde; g('f-donde').onchange(); }
   g('f-x').onclick=cerrar;
   const dato=()=>({donde:edit?it.calId:g('f-donde').value,id:edit?it.id:undefined,calId:edit?it.calId:undefined,titulo:g('f-titulo').value,todoElDia:g('f-todo').checked,fecha:g('f-fecha').value,hasta:g('f-hasta').value,horaIni:g('f-hi').value,horaFin:g('f-hf').value,lugar:g('f-lugar').value,
     nota:edit?'':g('f-nota').value,movible:!edit&&g('f-movible').checked,privado:!edit&&g('f-privado').checked,bloqueaJuan:!edit&&g('f-bloquea').checked});
@@ -369,7 +435,9 @@ function formulario(it){
     try{ const r=await api('chocar',d); const l=r.cruza.map(c=>`${esc(c.titulo)} (${c.todoElDia?'todo el día':esc(horaDe(c))})`); box.innerHTML=(l.length||r.festivos.length)?`<div class="warn-box">${l.length?'Se cruza con: '+l.join('; ')+'. ':''}${r.festivos.length?'Festivo: '+esc(r.festivos.join('; ')):''} Puedes crearlo igual.</div>`:'<div class="vacio">Sin cruces con la agenda de Juan.</div>'; }catch(e){ box.innerHTML=''; } },450); };
   ['f-fecha','f-hasta','f-hi','f-hf'].forEach(i=>g(i).addEventListener('change',revisar)); revisar();
   g('f').onsubmit=async ev=>{ ev.preventDefault(); const b=g('f-ok'); b.disabled=true; const d=dato();
-    try{ const r=await api(edit?'mover':'crear',d); toast(r.mensaje||'Listo.'); cerrar(); S.hist=null; await cargar(); }catch(e){ b.disabled=false; falla(e); } };
+    try{ const r=await api(edit?'mover':'crear',d); toast(r.mensaje||'Listo.');
+      if(pre){ try{ S.prop=await mesa('propuesta_resolver',{id:pre.pid,indice:pre.indice,estado:'aprobada',evento:r.id||d.donde}); }catch(e2){ toast('El evento se creó, pero no se pudo marcar la propuesta como aprobada: '+e2.message,true); } }
+      cerrar(); S.hist=null; await cargar(); }catch(e){ b.disabled=false; falla(e); } };
 }
 
 /* ---------- ayuda ---------- */
@@ -396,12 +464,18 @@ document.addEventListener('click',e=>{
   if(t.dataset.f){ S.filtro[t.dataset.f]=S.filtro[t.dataset.f]?0:1; pintar(); return; }
   if(t.dataset.modo){ S.modo=t.dataset.modo; if(S.modo==='lista') S.ancla=S.hoy; cargar(); return; }
   if(t.dataset.nav!==undefined){ const n=+t.dataset.nav; if(n===0){S.ancla=S.hoy;S.sel=null;} else if(S.modo==='mes'){ const p=mesIni(S.ancla); S.ancla=suma(mesIni(suma(p,n>0?32:-1)),0); } else S.ancla=suma(S.ancla,n*(S.modo==='semana'?7:30)); cargar(); return; }
-  if(t.classList.contains('tab')){ S.vista=t.dataset.v; if(S.vista==='libres'&&!S.libres) cargarLibres(); if(S.vista==='hist'&&!S.hist) cargarHist(); if(S.vista==='choques'||S.vista==='cal') cargar(); else pintar(); return; }
+  if(t.classList.contains('tab')){ S.vista=t.dataset.v; if(S.vista==='prop') cargarProp(); if(S.vista==='libres'&&!S.libres) cargarLibres(); if(S.vista==='hist'&&!S.hist) cargarHist(); if(S.vista==='choques'||S.vista==='cal') cargar(); else pintar(); return; }
+  if(t.id==='p-enviar'){ enviarProp(null); return; }
+  if(t.id==='p-grabar'){ grabarProp(); return; }
+  if(t.dataset.ap){ const [id,i]=t.dataset.ap.split('|'), p=S.prop.pendientes.find(x=>x.id===id); if(p) formulario(null,dePropuesta(p,+i)); return; }
+  if(t.dataset.no||t.dataset.nop){ const [id,i]=(t.dataset.no||t.dataset.nop).split('|'); if(!confirm(t.dataset.nop?'¿Descartar toda la propuesta?':'¿Descartar este evento?')) return;
+    mesa('propuesta_resolver',t.dataset.nop?{id,estado:'descartada'}:{id,indice:+i,estado:'descartada'}).then(r=>{ S.prop=r; pintar(); toast('Descartado.'); },falla); return; }
   if(t.id==='nuevo'){ formulario(null); return; }
   if(t.id==='ayuda'){ ayuda(); return; }
   if(t.id==='refresh'){ S.libres=null; S.hist=null; cargar(); if(S.vista==='libres') cargarLibres(); if(S.vista==='hist') cargarHist(); return; }
   if(t.id==='copiar'&&S.libres){ const tx='Juan puede en estos horarios:\n'+S.libres.dias.filter(d=>!/sin huecos/.test(d.libres)).slice(0,10).map(d=>'• '+d.etiqueta+': '+d.libres).join('\n'); (navigator.clipboard?navigator.clipboard.writeText(tx):Promise.reject()).then(()=>toast('Copiado.'),()=>toast('No se pudo copiar. Selecciona el texto a mano.',true)); }
 });
+document.addEventListener('change',e=>{ if(e.target&&e.target.id==='p-archivo'&&e.target.files[0]) enviarProp(e.target.files[0]); });
 document.addEventListener('keydown',e=>{ if(e.key==='Escape') cerrar(); if((e.key==='Enter'||e.key===' ')&&e.target.classList&&e.target.classList.contains('dia')){ e.preventDefault(); S.sel=e.target.dataset.d; pintar(); } });
 async function cargarLibres(){ try{ S.libres=await api('libres'); }catch(e){ falla(e); } pintar(); }
 async function cargarHist(){ try{ S.hist=(await api('historial')).filas; }catch(e){ falla(e); } pintar(); }
